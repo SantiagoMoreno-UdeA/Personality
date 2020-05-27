@@ -10,14 +10,14 @@ import numpy as np
 import csv
 import pickle
 import matplotlib.pyplot as plt
-from pathlib import Path
+from pathlib import Path  
 import cv2  
 import seaborn as sn  
 import pandas as pd   
 import keras
 from math import ceil
 from keras import layers  
-from keras.layers import Flatten, Input, Add, Dense, Activation, ZeroPadding2D, BatchNormalization, Flatten, Conv2D, AveragePooling2D, MaxPooling2D, GlobalMaxPooling2D, Dropout, TimeDistributed  
+from keras.layers import Flatten, Input, Add, Dense, Activation, ZeroPadding2D, BatchNormalization, Flatten, Conv2D, AveragePooling2D, MaxPooling2D, GlobalMaxPooling2D, Dropout, TimeDistributed, AveragePooling1D  
 from keras.models import Sequential, Model, load_model  
 from keras.layers.recurrent import LSTM
 from keras.callbacks import ModelCheckpoint  
@@ -256,17 +256,20 @@ def generate_video_secuences(X, Y, batch_size): #Batch_size videos a entrar en l
             else: 
                 length = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
                 #leemos un frame y lo guardamos
-                for i in range(202):
+                for i in range(62):
                     try:
                         ret, frame = cap.read()
                         frame_number+=1 
                     except:
                         print('Error en el frame ',frame_number+1)
                     if ret==True:
-                        dim = (248, 248)
+                        dim = (144, 144)
                         #resize image
+                        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                         frame_resized = cv2.resize(frame, dim, interpolation = cv2.INTER_AREA)
-                        if frame_number<101:
+                        frame_resized=(frame_resized/127.5)-1
+                        frame_resized=np.reshape(frame_resized,(144,144,1))
+                        if frame_number<31:
                             frames_temp.append(frame_resized)
                         else:
                             X_temp.append(frames_temp)
@@ -280,22 +283,25 @@ def generate_video_secuences(X, Y, batch_size): #Batch_size videos a entrar en l
     
 def create_cnn():  
     model = Sequential()
-    model.add(TimeDistributed(Conv2D(64, kernel_size=(3, 3),activation='relu'),input_shape=(100, 248, 248, 3)))
+    model.add(TimeDistributed(Conv2D(8, kernel_size=(3, 3),activation='relu'),input_shape=(30, 144, 144, 1)))
     #model.add(TimeDistributed(Conv2D(64, kernel_size=(3, 3), activation='relu')))
     model.add(TimeDistributed(MaxPooling2D(pool_size=(2, 2))))
     
-    model.add(TimeDistributed(Conv2D(128, kernel_size=(3, 3), activation='relu')))
-    model.add(TimeDistributed(Conv2D(256, kernel_size=(3, 3), activation='relu')))
+    model.add(TimeDistributed(Conv2D(16, kernel_size=(3, 3), activation='relu')))
+    model.add(TimeDistributed(Conv2D(32, kernel_size=(3, 3), activation='relu')))
     
-    model.add(TimeDistributed(Conv2D(512, kernel_size=(3, 3), activation='relu')))
+    model.add(TimeDistributed(Conv2D(64, kernel_size=(3, 3), activation='relu')))
     model.add(TimeDistributed(MaxPooling2D(pool_size=(2, 2))))
-    model.add(TimeDistributed(Conv2D(1024, kernel_size=(3, 3), activation='relu')))
+    model.add(TimeDistributed(Conv2D(128, kernel_size=(3, 3), activation='relu')))
     model.add(TimeDistributed(MaxPooling2D(pool_size=(2, 2))))
-    model.add(TimeDistributed(Flatten()))
+    #model.add(TimeDistributed(Conv2D(2048, kernel_size=(3, 3), activation='relu')))
+    model.add(TimeDistributed(Conv2D(256, kernel_size=(3, 3), activation='relu')))
+    model.add(TimeDistributed(MaxPooling2D(pool_size=(2, 2))))
+    model.add(TimeDistributed(GlobalMaxPooling2D()))
     
     model.add(LSTM(64,activation='relu', return_sequences=False))
     #model.add(Dense(200,activation='relu'))
-    model.add(Dense(100,activation='relu'))
+    #model.add(Dense(100,activation='relu'))
     model.add(Dense(50,activation='relu'))
     model.add(Dense(5,activation='softmax'))
     
@@ -304,13 +310,13 @@ def create_cnn():
 
 #%% program
 cnn_model=create_cnn()
-cnn_model.compile(loss='categorical_crossentropy', optimizer='sgd', metrics=['acc', 'mse'])  
+cnn_model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['acc', 'mse'])  
 #cnn_model.build(input_shape=(100, 248, 248, 3))
 cnn_model.summary()  
 
 
 #%% Train and validate generators
-batch_size=8
+batch_size=2
 X_train=X_train[:320]
 Y_personality_train=Y_personality_train[:320]
 
@@ -333,17 +339,20 @@ for num, video in enumerate(X_val):
         length = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
         #leemos un frame y lo guardamos
-        for i in range(202):
+        for i in range(155):
             try:
                 ret, frame = cap.read()
                 frame_number+=1 
             except:
                 print('Error en el frame ',frame_number+1)
             if ret==True:
-                dim = (248, 248)
+                dim = (144, 144)
                 #resize image
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                 frame_resized = cv2.resize(frame, dim, interpolation = cv2.INTER_AREA)
-                if frame_number<101:
+                frame_resized=(frame_resized/127.5)-1
+                frame_resized=np.reshape(frame_resized,(144,144,1))
+                if frame_number<31:
                     frames_temp.append(frame_resized)
                 else:
                     X_temp.append(frames_temp)
@@ -363,7 +372,7 @@ early_stopping = keras.callbacks.EarlyStopping(monitor='val_loss',patience=5,ver
 callbacks=[early_stopping,mc]
 cnn_model.fit_generator(generator=train_generator,
                              validation_data=(X_temp_val,Y_personality_temp_val),
-                             steps_per_epoch=10,#ceil((X_train.size)/batch_size),
+                             steps_per_epoch=160,#ceil((X_train.size)/batch_size),
                              #nb_val_samples=Y_personality_temp_val.shape[0],
                              epochs=100,
                              verbose=1,
