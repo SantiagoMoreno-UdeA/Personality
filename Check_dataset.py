@@ -242,11 +242,12 @@ with h5.File('First impressions data set/Train/val_data.h5', 'w') as hf:
 #%%  Program functions
             
             
-def generate_video_secuences(X, Y, batch_size, size_frame, ventana_analisis, epochs): #Batch_size videos a entrar en la red
-    for epoch in range(epochs):
+def generate_video_secuences(X, Y, batch_size, size_frame, ventana_analisis): #Batch_size videos a entrar en la red
+    while True:    
         number_batches=ceil(X.size/batch_size)
         for batch in range(number_batches):
-            X_batch=X[(batch*batch_size)+(number_batches*epoch):(batch*batch_size)+batch_size+(number_batches*epoch)]
+            X_batch=X[(batch*batch_size):(batch*batch_size)+batch_size]
+            #epoch+=1
             Y_temp=[]
             X_temp=[]
             for num, video in enumerate(X_batch):
@@ -276,21 +277,21 @@ def generate_video_secuences(X, Y, batch_size, size_frame, ventana_analisis, epo
                                 frames_temp.append(frame_resized)
                             else:
                                 X_temp.append(frames_temp)
-                                Y_temp.append(Y[(batch*batch_size)+num+(number_batches*epoch)])
+                                Y_temp.append(Y[(batch*batch_size)+num])
                                 frames_temp=[]
                                 frame_number=0
                     cap.release()
             yield(np.array(X_temp),np.array(Y_temp))
-        
+    
     
     
 def create_cnn():  
     model = Sequential()
-    model.add(TimeDistributed(Conv2D(8, kernel_size=(3, 3),activation='relu'),input_shape=(30, 144, 144, 1)))
+    model.add(TimeDistributed(Conv2D(16, kernel_size=(3, 3),activation='relu'),input_shape=(30, 144, 144, 1)))
     #model.add(TimeDistributed(Conv2D(64, kernel_size=(3, 3), activation='relu')))
     model.add(TimeDistributed(MaxPooling2D(pool_size=(2, 2))))
     
-    model.add(TimeDistributed(Conv2D(16, kernel_size=(3, 3), activation='relu')))
+    #model.add(TimeDistributed(Conv2D(16, kernel_size=(3, 3), activation='relu')))
     model.add(TimeDistributed(Conv2D(32, kernel_size=(3, 3), activation='relu')))
     
     model.add(TimeDistributed(Conv2D(64, kernel_size=(3, 3), activation='relu')))
@@ -302,7 +303,7 @@ def create_cnn():
     model.add(TimeDistributed(MaxPooling2D(pool_size=(2, 2))))
     model.add(TimeDistributed(GlobalAveragePooling2D()))
     
-    model.add(LSTM(64,activation='relu', return_sequences=False, dropout=0.2))
+    model.add(LSTM(64,activation='relu', return_sequences=False, dropout=0.4))
     #model.add(Dense(200,activation='relu'))
     model.add(Dense(100,activation='relu'))
     model.add(Dense(50,activation='relu'))
@@ -313,23 +314,25 @@ def create_cnn():
 
 #%% program
 K.clear_session()
+
+sgd=tf.keras.optimizers.SGD(learning_rate=0.1, momentum=0.1, nesterov=False, name="SGD")
 cnn_model=create_cnn()
-cnn_model.compile(loss='mean_squared_error', optimizer='adam', metrics=['acc', 'mse'])  
+cnn_model.compile(loss='mean_squared_logarithmic_error', optimizer=sgd, metrics=['acc', 'mse'])  
 #cnn_model.build(input_shape=(100, 248, 248, 3))
 cnn_model.summary()  
 
 
 #%% Train and validate generators
-batch_size=2
+batch_size=4
 epochs=100
 size_frame=144
 ventana_analisis=30
-X_train
-Y_personality_train
+X_train=X_train[:320]
+Y_personality_train=Y_personality_train[:320]
 
 
-X_val=X_val[:20]
-Y_personality_val=Y_personality_val[:20]
+X_val=X_val[:40]
+Y_personality_val=Y_personality_val[:40]
 
 
 
@@ -346,7 +349,7 @@ for num, video in enumerate(X_val):
         length = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
         #leemos un frame y lo guardamos
-        for i in range((ventana_analisis+1)*5):
+        for i in range((ventana_analisis+1)*5):   
             try:
                 ret, frame = cap.read()
                 frame_number+=1 
@@ -371,8 +374,8 @@ for num, video in enumerate(X_val):
 X_temp_val=np.array(X_temp);
 Y_personality_temp_val=np.array(Y_temp);
 
-train_generator=generate_video_secuences(X_train, Y_personality_train,batch_size,size_frame, ventana_analisis, epochs)
-#val_generator=generate_video_secuences(X_val, Y_personality_val, batch_size, size_frame, ventana_analisis, epochs)
+train_generator=generate_video_secuences(X_train, Y_personality_train, batch_size, size_frame, ventana_analisis)
+#val_generator=generate_video_secuences(X_val, Y_personality_val, batch_size, size_frame, ventana_analisis)
 #%% Fit the model
 mc = keras.callbacks.ModelCheckpoint('best_model.h5', monitor='val_loss', mode='min', verbose=1, save_best_only=True)
 #early_stopping = keras.callbacks.EarlyStopping(monitor='val_loss',patience=5,verbose=1)
@@ -380,8 +383,9 @@ mc = keras.callbacks.ModelCheckpoint('best_model.h5', monitor='val_loss', mode='
 callbacks=[mc]
 cnn_model.fit_generator(generator=train_generator,
                              validation_data=(X_temp_val,Y_personality_temp_val),
-                             steps_per_epoch=ceil(320/batch_size),
-                             #nb_val_samples=Y_personality_temp_val.shape[0],
+                             #validation_data=val_generator,
+                             #validation_steps=ceil(X_val.zize/batch_size),
+                             steps_per_epoch=ceil(X_train.size/batch_size),
                              epochs=epochs,
                              verbose=1,
                              callbacks=callbacks)
