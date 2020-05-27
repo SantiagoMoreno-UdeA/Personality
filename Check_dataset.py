@@ -16,13 +16,15 @@ import seaborn as sn
 import pandas as pd   
 import keras
 from math import ceil
+
 from keras import layers  
-from keras.layers import Flatten, Input, Add, Dense, Activation, ZeroPadding2D, BatchNormalization, Flatten, Conv2D, AveragePooling2D, MaxPooling2D, GlobalMaxPooling2D, Dropout, TimeDistributed, AveragePooling1D  
+from keras.layers import Flatten, Input, Add, Dense, Activation, ZeroPadding2D, BatchNormalization, Flatten, Conv2D, AveragePooling2D, MaxPooling2D, GlobalMaxPooling2D, GlobalAveragePooling2D, Dropout, TimeDistributed, AveragePooling1D  
 from keras.models import Sequential, Model, load_model  
 from keras.layers.recurrent import LSTM
 from keras.callbacks import ModelCheckpoint  
 from sklearn.metrics import confusion_matrix, classification_report
 from keras.models import load_model  
+from tensorflow.keras import backend as K
 import tensorflow as tf  
 import h5py as h5
 
@@ -244,7 +246,7 @@ def generate_video_secuences(X, Y, batch_size, size_frame, ventana_analisis, epo
     for epoch in range(epochs):
         number_batches=ceil(X.size/batch_size)
         for batch in range(number_batches):
-            X_batch=X[batch*batch_size:(batch*batch_size)+batch_size]
+            X_batch=X[(batch*batch_size)+(number_batches*epoch):(batch*batch_size)+batch_size+(number_batches*epoch)]
             Y_temp=[]
             X_temp=[]
             for num, video in enumerate(X_batch):
@@ -274,7 +276,7 @@ def generate_video_secuences(X, Y, batch_size, size_frame, ventana_analisis, epo
                                 frames_temp.append(frame_resized)
                             else:
                                 X_temp.append(frames_temp)
-                                Y_temp.append(Y[(batch*batch_size)+num])
+                                Y_temp.append(Y[(batch*batch_size)+num+(number_batches*epoch)])
                                 frames_temp=[]
                                 frame_number=0
                     cap.release()
@@ -298,20 +300,21 @@ def create_cnn():
     #model.add(TimeDistributed(Conv2D(2048, kernel_size=(3, 3), activation='relu')))
     model.add(TimeDistributed(Conv2D(256, kernel_size=(3, 3), activation='relu')))
     model.add(TimeDistributed(MaxPooling2D(pool_size=(2, 2))))
-    model.add(TimeDistributed(GlobalMaxPooling2D()))
+    model.add(TimeDistributed(GlobalAveragePooling2D()))
     
-    model.add(LSTM(64,activation='relu', return_sequences=False))
+    model.add(LSTM(64,activation='relu', return_sequences=False, dropout=0.2))
     #model.add(Dense(200,activation='relu'))
-    #model.add(Dense(100,activation='relu'))
+    model.add(Dense(100,activation='relu'))
     model.add(Dense(50,activation='relu'))
-    model.add(Dense(5,activation='softmax'))
+    model.add(Dense(5,activation='sigmoid'))
     
    # model.add(Flatten())
     return model
 
 #%% program
+K.clear_session()
 cnn_model=create_cnn()
-cnn_model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['acc', 'mse'])  
+cnn_model.compile(loss='mean_squared_error', optimizer='adam', metrics=['acc', 'mse'])  
 #cnn_model.build(input_shape=(100, 248, 248, 3))
 cnn_model.summary()  
 
@@ -321,8 +324,8 @@ batch_size=2
 epochs=100
 size_frame=144
 ventana_analisis=30
-X_train=X_train[:320]
-Y_personality_train=Y_personality_train[:320]
+X_train
+Y_personality_train
 
 
 X_val=X_val[:20]
@@ -369,14 +372,15 @@ X_temp_val=np.array(X_temp);
 Y_personality_temp_val=np.array(Y_temp);
 
 train_generator=generate_video_secuences(X_train, Y_personality_train,batch_size,size_frame, ventana_analisis, epochs)
-
+#val_generator=generate_video_secuences(X_val, Y_personality_val, batch_size, size_frame, ventana_analisis, epochs)
 #%% Fit the model
 mc = keras.callbacks.ModelCheckpoint('best_model.h5', monitor='val_loss', mode='min', verbose=1, save_best_only=True)
-early_stopping = keras.callbacks.EarlyStopping(monitor='val_loss',patience=5,verbose=1)
-callbacks=[early_stopping,mc]
+#early_stopping = keras.callbacks.EarlyStopping(monitor='val_loss',patience=5,verbose=1)
+#callbacks=[early_stopping,mc]
+callbacks=[mc]
 cnn_model.fit_generator(generator=train_generator,
                              validation_data=(X_temp_val,Y_personality_temp_val),
-                             steps_per_epoch=ceil((X_train.size)/batch_size),
+                             steps_per_epoch=ceil(320/batch_size),
                              #nb_val_samples=Y_personality_temp_val.shape[0],
                              epochs=epochs,
                              verbose=1,
