@@ -240,44 +240,45 @@ with h5.File('First impressions data set/Train/val_data.h5', 'w') as hf:
 #%%  Program functions
             
             
-def generate_video_secuences(X, Y, batch_size): #Batch_size videos a entrar en la red
-    number_batches=ceil(X.size/batch_size)
-    for batch in range(number_batches):
-        X_batch=X[batch*batch_size:(batch*batch_size)+batch_size]
-        Y_temp=[]
-        X_temp=[]
-        for num, video in enumerate(X_batch):
-            frame_number=0
-            frames_temp=[]
-            
-            cap = cv2.VideoCapture(str(video)[2:-2])
-            if (cap.isOpened()== False): 
-                print("Error opening video stream or file")
-            else: 
-                length = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-                #leemos un frame y lo guardamos
-                for i in range(62):
-                    try:
-                        ret, frame = cap.read()
-                        frame_number+=1 
-                    except:
-                        print('Error en el frame ',frame_number+1)
-                    if ret==True:
-                        dim = (144, 144)
-                        #resize image
-                        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                        frame_resized = cv2.resize(frame, dim, interpolation = cv2.INTER_AREA)
-                        frame_resized=(frame_resized/127.5)-1
-                        frame_resized=np.reshape(frame_resized,(144,144,1))
-                        if frame_number<31:
-                            frames_temp.append(frame_resized)
-                        else:
-                            X_temp.append(frames_temp)
-                            Y_temp.append(Y[(batch*batch_size)+num])
-                            frames_temp=[]
-                            frame_number=0
-                cap.release()
-        yield(np.array(X_temp),np.array(Y_temp))
+def generate_video_secuences(X, Y, batch_size, size_frame, ventana_analisis, epochs): #Batch_size videos a entrar en la red
+    for epoch in range(epochs):
+        number_batches=ceil(X.size/batch_size)
+        for batch in range(number_batches):
+            X_batch=X[batch*batch_size:(batch*batch_size)+batch_size]
+            Y_temp=[]
+            X_temp=[]
+            for num, video in enumerate(X_batch):
+                frame_number=0
+                frames_temp=[]
+                
+                cap = cv2.VideoCapture(str(video)[2:-2])
+                if (cap.isOpened()== False): 
+                    print("Error opening video stream or file")
+                else: 
+                    length = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                    #leemos un frame y lo guardamos
+                    for i in range((ventana_analisis+1)*2):
+                        try:
+                            ret, frame = cap.read()
+                            frame_number+=1 
+                        except:
+                            print('Error en el frame ',frame_number+1)
+                        if ret==True:
+                            dim = (size_frame, size_frame)
+                            #resize image
+                            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                            frame_resized = cv2.resize(frame, dim, interpolation = cv2.INTER_AREA)
+                            frame_resized=(frame_resized/127.5)-1
+                            frame_resized=np.reshape(frame_resized,(size_frame,size_frame,1))
+                            if frame_number<(ventana_analisis+1):
+                                frames_temp.append(frame_resized)
+                            else:
+                                X_temp.append(frames_temp)
+                                Y_temp.append(Y[(batch*batch_size)+num])
+                                frames_temp=[]
+                                frame_number=0
+                    cap.release()
+            yield(np.array(X_temp),np.array(Y_temp))
         
     
     
@@ -317,6 +318,9 @@ cnn_model.summary()
 
 #%% Train and validate generators
 batch_size=2
+epochs=100
+size_frame=144
+ventana_analisis=30
 X_train=X_train[:320]
 Y_personality_train=Y_personality_train[:320]
 
@@ -339,20 +343,20 @@ for num, video in enumerate(X_val):
         length = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
         #leemos un frame y lo guardamos
-        for i in range(155):
+        for i in range((ventana_analisis+1)*5):
             try:
                 ret, frame = cap.read()
                 frame_number+=1 
             except:
                 print('Error en el frame ',frame_number+1)
             if ret==True:
-                dim = (144, 144)
+                dim = (size_frame, size_frame)
                 #resize image
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                 frame_resized = cv2.resize(frame, dim, interpolation = cv2.INTER_AREA)
                 frame_resized=(frame_resized/127.5)-1
-                frame_resized=np.reshape(frame_resized,(144,144,1))
-                if frame_number<31:
+                frame_resized=np.reshape(frame_resized,(size_frame,size_frame,1))
+                if frame_number<(ventana_analisis+1):
                     frames_temp.append(frame_resized)
                 else:
                     X_temp.append(frames_temp)
@@ -364,7 +368,7 @@ for num, video in enumerate(X_val):
 X_temp_val=np.array(X_temp);
 Y_personality_temp_val=np.array(Y_temp);
 
-train_generator=generate_video_secuences(X_train, Y_personality_train, batch_size)
+train_generator=generate_video_secuences(X_train, Y_personality_train,batch_size,size_frame, ventana_analisis, epochs)
 
 #%% Fit the model
 mc = keras.callbacks.ModelCheckpoint('best_model.h5', monitor='val_loss', mode='min', verbose=1, save_best_only=True)
@@ -372,9 +376,9 @@ early_stopping = keras.callbacks.EarlyStopping(monitor='val_loss',patience=5,ver
 callbacks=[early_stopping,mc]
 cnn_model.fit_generator(generator=train_generator,
                              validation_data=(X_temp_val,Y_personality_temp_val),
-                             steps_per_epoch=160,#ceil((X_train.size)/batch_size),
+                             steps_per_epoch=ceil((X_train.size)/batch_size),
                              #nb_val_samples=Y_personality_temp_val.shape[0],
-                             epochs=100,
+                             epochs=epochs,
                              verbose=1,
                              callbacks=callbacks)
 
